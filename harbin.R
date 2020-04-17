@@ -6,6 +6,162 @@ library(tidyr)
 library(readxl)
 library(writexl)
 
+harbin <- read.csv("data/harbin_sn.csv", stringsAsFactors = FALSE)
+
+edges <- harbin %>%
+  select(one_of("tail_no", "head_no"))
+
+edges <- edges[-1,]
+
+colnames(edges) <- c("tail", "head")
+
+#write.csv(edges, "edges.csv", row.names = FALSE)
+
+#edges <- read.csv("edges.csv", stringsAsFactors = FALSE)
+
+nodes <- harbin %>%
+  select(1:5, 8)
+
+nodes_tail <- nodes %>% 
+  select(one_of("tail_no")) %>%
+  distinct()
+
+nodes_head <- nodes %>%
+  select(one_of("head_no")) %>%
+  distinct()
+
+setdiff(nodes_tail$tail_no, nodes_head$head_no)
+
+duplicated(nodes$head_no)
+
+nodes <- nodes[duplicated(nodes$head_no) == FALSE, 3:6]
+
+colnames(nodes) <- c("vertex.id", "name", "gender", "channel")
+
+#write.csv(nodes, "nodes.csv", row.names = FALSE)
+
+#nodes <- read.csv("nodes.csv", stringsAsFactors = FALSE)
+
+harbin_network <- network(
+  edges,
+  vertex.attr = nodes,
+  vertex.attrnames = c("vertex.id", "name", "gender", "channel"),
+  directed = TRUE,
+  bipartite = FALSE
+)
+
+plot_position <- plot(harbin_network)
+
+
+
+nodes_dy <- harbin[duplicated(harbin$head_no) == FALSE, c(3, 6)]
+
+nodes_dy$end <- c("2020/4/10")
+nodes_dy$contact_date[1] <- "2020/3/19"
+
+nodes_dy$contact_date <- as.POSIXct(nodes_dy$contact_date)
+nodes_dy$end <- as.POSIXct(nodes_dy$end)
+
+nodes_dy$onset <- ((nodes_dy$contact_date - as.POSIXct("2020-03-19")) / (24 * 60 * 60)) + 1
+nodes_dy$terminus <- (as.POSIXct("2020-04-10") - as.POSIXct("2020-03-19"))
+
+nodes_dy <- nodes_dy[, c(4, 5, 1)]
+
+colnames(nodes_dy)[3] <- c("vertex.id")
+
+write.csv(nodes_dy, "nodes_dy.csv", row.names = FALSE)
+
+nodes_dy <- read.csv("nodes_dy.csv", stringsAsFactors = FALSE)
+
+
+
+edges_dy <- harbin[, c(1, 3, 6)]
+
+edges_dy$end <- c("2020/4/10")
+edges_dy <- edges_dy[-1,]
+
+edges_dy$contact_date <- as.POSIXct(edges_dy$contact_date)
+edges_dy$end <- as.POSIXct(edges_dy$end)
+
+edges_dy$onset <- ((edges_dy$contact_date - as.POSIXct("2020-03-19")) / (24 * 60 * 60)) + 1
+edges_dy$terminus <- (as.POSIXct("2020-04-10") - as.POSIXct("2020-03-19"))
+
+edges_dy <- edges_dy[, c(5, 6, 1, 2)]
+
+colnames(edges_dy)[3:4] <- c("tail",	"head")
+
+write.csv(edges_dy, "edges_dy.csv", row.names = FALSE)
+
+edges_dy <- read.csv("edges_dy.csv", stringsAsFactors = FALSE)
+
+harbin_dynamic <- networkDynamic(
+  harbin_network,
+  edge.spells = edges_dy,
+  vertex.spells = nodes_dy
+)
+
+
+network::set.vertex.attribute(harbin_dynamic, 'x', plot_position[,1])
+network::set.vertex.attribute(harbin_dynamic, 'y', plot_position[,2])
+
+
+network.dynamic.check(harbin_dynamic)
+
+plot(harbin_dynamic)
+
+reconcile.vertex.activity(harbin_dynamic, mode = "match.to.edges")
+
+#filmstrip(dynamicCollabs, displaylabels = FALSE)
+
+compute.animation(
+  harbin_dynamic,
+  #verbose = FALSE,
+  #seed.coords = (100),
+  animation.mode = "useAttribute",
+  slice.par = list(
+    start = 0,
+    end = 23,
+    interval = 2,
+    aggregate.dur = 1,
+    rule = "latest"
+  )
+)
+
+render.d3movie(
+  harbin_dynamic,
+  usearrows = TRUE,
+  #render.par = list(tween.frames = 10, show.time = FALSE),
+  #plot.par = list(mar = c(0, 0, 0, 0)),
+  displaylabels = TRUE,
+  label = paste(harbin_dynamic%v%"vertex.id",
+                harbin_dynamic%v%"name", "途徑：", harbin_dynamic%v%"channel")
+  # This slice function makes the labels work
+)
+
+plot(tEdgeFormation(harbin_dynamic, time.interval = 1))
+
+
+dynamicBetweenness <- tSnaStats(
+  harbin_dynamic,
+  snafun = "centralization",
+  start = 0,
+  end = 23,
+  time.interval = 2,
+  aggregate.dur = 1,
+  FUN = "infocent"
+)
+
+plot(dynamicBetweenness)
+
+harbin_anal <- data.frame(nodes, infocent = infocent(harbin_network), degree = sna::degree(harbin_network), betweenness = flowbet(harbin_network))
+
+harbin_anal <- arrange(harbin_anal, desc(degree))
+
+harbin_anal
+
+eccentricity(harbin_network)
+
+
 edges <- read.csv("data/edge.csv")
 #edges <- edges[, c(2, 1)]
 
@@ -22,7 +178,11 @@ thenetwork <- network(
   bipartite = FALSE
 )
 
-plot(thenetwork)
+plot_position <- plot(thenetwork)
+
+
+
+# attach your *static* coordinates to the network
 
 dy_Nodes <- read.csv("data/node_dy.csv")
 dy_Edges <- read.csv("data/edge_dy.csv")
@@ -39,14 +199,13 @@ dynamicCollabs <- networkDynamic(
 )
 
 
+network::set.vertex.attribute(dynamicCollabs, 'x', plot_position[,1])
+network::set.vertex.attribute(dynamicCollabs, 'y', plot_position[,2])
+
+
 network.dynamic.check(dynamicCollabs)
 
 plot(dynamicCollabs)
-
-g <- graph.adjacency(edges, mode = "undirected")
-
-g2<-V(g)[degree(g)<1]
-g<-delete.vertices(g,g2)
 
 reconcile.vertex.activity(dynamicCollabs, mode = "match.to.edges")
 
@@ -56,7 +215,7 @@ compute.animation(
   dynamicCollabs,
   #verbose = FALSE,
   #seed.coords = (100),
-  animation.mode = "MDSJ",
+  animation.mode = "useAttribute",
   slice.par = list(
     start = 5,
     end = 75,
@@ -85,9 +244,12 @@ edge.tooltip = function(slice) {
 }
 
 
-PHStaticEdges <- read.csv(file.choose())
+
+
+
+PHStaticEdges <- read.csv("demo/TNAWR_StaticEdgelist.csv")
 PHVertexAttributes <- read.csv(
-  file.choose(),
+  "demo/TNAWR_VertexAttributes.csv",
   stringsAsFactors = FALSE
 )
 
@@ -100,8 +262,8 @@ thenetwork <- network(
 )
 plot(thenetwork)
 
-PHDynamicNodes <- read.csv(file.choose())
-PHDynamicEdges <- read.csv(file.choose())
+PHDynamicNodes <- read.csv("demo/TNAWR_DynamicNodes.csv")
+PHDynamicEdges <- read.csv("demo/TNAWR_DynamicEdges.csv")
 
 dynamicCollabs <- networkDynamic(
   thenetwork,
@@ -152,8 +314,52 @@ df<-matrix(c(-0.99603723, 2.798261858,
              0.72715205, 6.634426198,
              0.01328487, 9.529656458,
              -1.49393321, 0.662555779),ncol=2,byrow=TRUE)
-set.vertex.attribute(wheel,'x',df[,1])
-set.vertex.attribute(wheel,'y',df[,2])
+network::set.vertex.attribute(wheel,'x',df[,1])
+network::set.vertex.attribute(wheel,'y',df[,2])
 
 compute.animation(wheel,animation.mode = 'useAttribute')
 render.d3movie(wheel)
+
+
+
+
+nodes_dy$onset <- as.POSIXct(nodes_dy$onset)
+nodes_dy$terminus <- as.POSIXct(nodes_dy$terminus)
+
+nodes_dy$onset <- as.character(nodes_dy$onset)
+nodes_dy$terminus <- as.character(nodes_dy$terminus)
+
+nodes_dy$onset <- gsub("-", "", nodes_dy$onset)
+nodes_dy$terminus <- gsub("-", "", nodes_dy$terminus)
+
+nodes_dy$onset <- as.numeric(nodes_dy$onset)
+nodes_dy$terminus <- as.numeric(nodes_dy$terminus)
+
+nodes_dy$vertex.id <- as.numeric(nodes_dy$vertex.id)
+
+#nodes_dy$onset.censored <- "FALSE"
+#nodes_dy$terminus.censored <- "FALSE"
+#nodes_dy$duration <- nodes_dy$terminus - nodes_dy$onset
+
+
+
+edges_dy <- edges_dy[-1,]
+
+edges_dy$onset <- as.POSIXct(edges_dy$onset)
+edges_dy$terminus <- as.POSIXct(edges_dy$terminus)
+
+edges_dy$onset <- as.character(edges_dy$onset)
+edges_dy$terminus <- as.character(edges_dy$terminus)
+
+edges_dy$onset <- gsub("-", "", edges_dy$onset)
+edges_dy$terminus <- gsub("-", "", edges_dy$terminus)
+
+edges_dy$onset <- as.numeric(edges_dy$onset)
+edges_dy$terminus <- as.numeric(edges_dy$terminus)
+
+edges_dy <- edges_dy[, c(3, 4, 1, 2)]
+
+#edges_dy$onset.censored <- "FALSE"
+#edges_dy$terminus.censored <- "FALSE"
+#edges_dy$duration <- edges_dy$terminus - edges_dy$onset
+#edges_dy$edge.id <- seq(1:43)s
